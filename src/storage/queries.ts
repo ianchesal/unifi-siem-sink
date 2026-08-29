@@ -60,18 +60,33 @@ export function listEvents(
   const limit = Math.min(filters.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
   const offset = filters.offset ?? 0;
 
-  let rows = db.conn
+  const sourceCidr = filters.sourceIp && isCidr(filters.sourceIp) ? filters.sourceIp : undefined;
+  const destCidr = filters.destIp && isCidr(filters.destIp) ? filters.destIp : undefined;
+  const hasCidrFilter = sourceCidr !== undefined || destCidr !== undefined;
+
+  if (hasCidrFilter) {
+    // CIDR containment can't be expressed in the SQL WHERE clause, so we can't apply
+    // LIMIT/OFFSET or COUNT(*) at the SQL level without over/under-counting. Fetch every row
+    // matching the non-CIDR clauses, filter by CIDR in JS, then paginate the filtered set.
+    let rows = db.conn
+      .prepare(`SELECT * FROM events ${where} ORDER BY received_at DESC`)
+      .all(...params) as unknown as StoredEvent[];
+
+    if (sourceCidr) {
+      rows = rows.filter((row) => row.source_ip !== null && ipInCidr(row.source_ip, sourceCidr));
+    }
+    if (destCidr) {
+      rows = rows.filter((row) => row.dest_ip !== null && ipInCidr(row.dest_ip, destCidr));
+    }
+
+    const total = rows.length;
+    const events = rows.slice(offset, offset + limit);
+    return { events, total };
+  }
+
+  const rows = db.conn
     .prepare(`SELECT * FROM events ${where} ORDER BY received_at DESC LIMIT ? OFFSET ?`)
     .all(...params, limit, offset) as unknown as StoredEvent[];
-
-  if (filters.sourceIp && isCidr(filters.sourceIp)) {
-    const cidr = filters.sourceIp;
-    rows = rows.filter((row) => row.source_ip !== null && ipInCidr(row.source_ip, cidr));
-  }
-  if (filters.destIp && isCidr(filters.destIp)) {
-    const cidr = filters.destIp;
-    rows = rows.filter((row) => row.dest_ip !== null && ipInCidr(row.dest_ip, cidr));
-  }
 
   const totalRow = db.conn
     .prepare(`SELECT COUNT(*) as count FROM events ${where}`)

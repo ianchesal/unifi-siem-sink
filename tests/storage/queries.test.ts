@@ -70,6 +70,79 @@ describe('listEvents', () => {
     const { events } = listEvents(db, { limit: 10000 });
     expect(events.length).toBeLessThanOrEqual(500);
   });
+
+  it('computes total from CIDR-matched rows only, not from all rows matching the other filters', () => {
+    // Add more CIDR-matching rows, plus a non-CIDR-matching row, to the 3 seeded in beforeEach.
+    for (let i = 0; i < 4; i++) {
+      insertEvent(
+        db,
+        normalize(
+          makeCef({
+            extension: {
+              UNIFIcategory: 'Security',
+              UNIFIsubCategory: 'Intrusion Prevention',
+              src: `10.0.30.${20 + i}`,
+            },
+          }),
+          `cidr-extra-${i}`,
+          `2026-08-28T13:0${i}:00.000Z`
+        )
+      );
+    }
+    insertEvent(
+      db,
+      normalize(
+        makeCef({
+          extension: { UNIFIcategory: 'Security', UNIFIsubCategory: 'Firewall', src: '10.0.99.1' },
+        }),
+        'cidr-noncidr',
+        '2026-08-28T13:10:00.000Z'
+      )
+    );
+
+    // 5 rows total fall inside 10.0.30.0/24: the original ips-1 (10.0.30.5) plus the 4 extras.
+    // The 6th inserted row (10.0.99.1) and the other seeded rows (10.0.31.9, no ip) do not match.
+    const { events, total } = listEvents(db, { sourceIp: '10.0.30.0/24' });
+    expect(total).toBe(5);
+    expect(events.length).toBe(5);
+  });
+
+  it('paginates correctly (limit/offset) against the CIDR-filtered set, not the unfiltered set', () => {
+    for (let i = 0; i < 4; i++) {
+      insertEvent(
+        db,
+        normalize(
+          makeCef({
+            extension: {
+              UNIFIcategory: 'Security',
+              UNIFIsubCategory: 'Intrusion Prevention',
+              src: `10.0.30.${20 + i}`,
+            },
+          }),
+          `cidr-extra-${i}`,
+          `2026-08-28T13:0${i}:00.000Z`
+        )
+      );
+    }
+    insertEvent(
+      db,
+      normalize(
+        makeCef({
+          extension: { UNIFIcategory: 'Security', UNIFIsubCategory: 'Firewall', src: '10.0.99.1' },
+        }),
+        'cidr-noncidr',
+        '2026-08-28T13:10:00.000Z'
+      )
+    );
+
+    const all = listEvents(db, { sourceIp: '10.0.30.0/24' });
+    expect(all.total).toBe(5);
+
+    const page = listEvents(db, { sourceIp: '10.0.30.0/24', limit: 2, offset: 1 });
+    expect(page.total).toBe(5);
+    expect(page.events.length).toBe(2);
+    expect(page.events.map((e) => e.raw)).toEqual(all.events.slice(1, 3).map((e) => e.raw));
+  });
 });
 
 describe('getEvent', () => {
