@@ -57,11 +57,11 @@ describe('normalize', () => {
     expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').category).toBe('admin_action');
   });
 
-  it('defaults unrecognized category pairs to unknown', () => {
+  it('falls back to a slugified category for unrecognized category pairs', () => {
     const cef = makeCef({
       extension: { UNIFIcategory: 'Power', UNIFIsubCategory: 'PoE' },
     });
-    expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').category).toBe('unknown');
+    expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').category).toBe('power');
   });
 
   it('falls back to UNIFIclientIp when src is absent', () => {
@@ -142,6 +142,33 @@ describe('normalize', () => {
       extension: { UNIFIcategory: 'Security', UNIFIpolicyType: 'Firewall', UNIFIpolicyName: 'Block IoT VLAN' },
     });
     expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').signature).toBe('Block IoT VLAN');
+  });
+
+  // Real samples (tests/fixtures/real-cef-samples.md) show UNIFIcategory
+  // values far more varied than the hand-mapped security taxonomy this
+  // project cares about most: "Internet and WAN", "UniFi Devices",
+  // "Software Updates", and a Security event with neither UNIFIsubCategory
+  // nor UNIFIpolicyType. An unmapped-but-known category should fall back
+  // to a normalized slug of the real value, not the generic 'unknown'
+  // string reserved for genuine parse failures.
+  it('falls back to a slugified UNIFIcategory when no specific mapping exists', () => {
+    const cef = makeCef({ extension: { UNIFIcategory: 'Internet and WAN' } });
+    expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').category).toBe('internet_and_wan');
+  });
+
+  it('slugifies a multi-word UNIFIcategory with mixed case', () => {
+    const cef = makeCef({ extension: { UNIFIcategory: 'UniFi Devices' } });
+    expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').category).toBe('unifi_devices');
+  });
+
+  it('slugifies a single-word UNIFIcategory', () => {
+    const cef = makeCef({ extension: { UNIFIcategory: 'Security' } });
+    expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').category).toBe('security');
+  });
+
+  it('still defaults to unknown when UNIFIcategory is entirely absent', () => {
+    const cef = makeCef({ extension: {} });
+    expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').category).toBe('unknown');
   });
 });
 

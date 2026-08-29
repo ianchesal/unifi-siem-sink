@@ -56,6 +56,13 @@ function validPortOrNull(value: string | undefined): number | null {
   return Number.isInteger(port) && port >= 0 && port <= 65535 ? port : null;
 }
 
+function slugifyCategory(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 function validEventTime(value: string | undefined): string | null {
   if (!value) return null;
   const asNumber = Number(value);
@@ -73,7 +80,9 @@ export function normalize(cef: CefMessage, raw: string, receivedAt: string): Eve
   return {
     received_at: receivedAt,
     event_time: validEventTime(ext.rt ?? ext.UNIFIutcTime),
-    category: CATEGORY_MAP[categoryKey] ?? 'unknown',
+    category:
+      CATEGORY_MAP[categoryKey] ??
+      (ext.UNIFIcategory ? slugifyCategory(ext.UNIFIcategory) : 'unknown'),
     subcategory: ext.UNIFIsubCategory ?? null,
     severity: Number.isFinite(severityNum) ? severityNum : null,
     name: cef.name || null,

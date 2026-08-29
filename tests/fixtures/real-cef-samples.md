@@ -55,3 +55,69 @@ threats, so may not be worth dedicated categorization).
 ```
 CEF:0|Ubiquiti|UniFi OS|5.1.31|1005|Admin Made Config Changes|2|UNIFIhost=Host UNIFIdeviceName=UDM-Pro UNIFIdeviceModel=UDMPRO UNIFIdeviceIp=71.235.83.203 UNIFIdeviceMac=68:D7:9A:35:AF:41 UNIFIdeviceVersion=5.1.31 msg=Ian C. changed Syslog Settings Mode setting from "off" to "external". Source IP: 71.235.83.203
 ```
+
+## 2026-08-26 - Security / Threat Detected and Blocked
+
+Trigger: Unknown. It's reported as Very High for Severity Level and its from
+tranquility to tranquility which is my home lab machine. Just an oddity I
+thought worth capturing.
+
+Status: Unknown
+
+```
+CEF:0|Ubiquiti|UniFi Network|10.5.67|201|Threat Detected and Blocked|9|UNIFIcategory=Security UNIFIhost=UDM-Pro UNIFIdeviceMac=68:d7:9a:35:af:41 UNIFIdeviceName=UDM-Pro UNIFIdeviceModel=UDM-Pro UNIFIdeviceIp=192.168.1.1 UNIFIdeviceVersion=5.1.31 UNIFIsrcClientAlias=tranquility UNIFIsrcClientHostname=tranquility UNIFIsrcClientMac=1c:1b:0d:18:07:53 UNIFIsrcClientModel=Dell T110 Server UNIFIdstClientAlias=tranquility UNIFIdstClientHostname=tranquility UNIFIdstClientMac=1c:1b:0d:18:07:53 UNIFIdstClientModel=Dell T110 Server UNIFIutcTime=2026-08-27T00:02:03.992Z msg=A network intrusion attempt from tranquility to tranquility has been detected and blocked.
+```
+
+Note: this event has `UNIFIcategory=Security` but no `UNIFIsubCategory` and no
+`UNIFIpolicyType` at all, unlike the DShield sample above — so it currently
+falls through to the generic `category: 'security'` fallback slug rather
+than `ips_alert`. It also has no `src`/`dst`/`UNIFIclientIp`/`UNIFIdeviceIp`
+keys — only MAC/hostname/alias pairs for both sides — so `source_ip`/
+`dest_ip` correctly come back `null` rather than guessing from a non-IP
+field.
+
+Status: used to add the UNIFIcategory-slug fallback for unmapped category
+pairs (see `CATEGORY_MAP` fallback logic in `normalize.ts`).
+
+## 2026-08-29 — Internet and WAN / Internet Down
+
+```
+CEF:0|Ubiquiti|UniFi Network|10.5.67|100|Internet Down|10|UNIFIcategory=Internet and WAN UNIFIhost=UDM-Pro UNIFIdeviceMac=68:d7:9a:35:af:41 UNIFIdeviceName=UDM-Pro UNIFIdeviceModel=UDM-Pro UNIFIdeviceIp=192.168.1.1 UNIFIdeviceVersion=5.1.31 UNIFIwanName=Comcast UNIFIwanId=WAN1 UNIFIwanPort=9 UNIFIwanIsp=Comcast Cable UNIFIwanSubnet=71.235.83.203/21 UNIFIwanSla=Auto UNIFIutcTime=2026-08-25T07:22:44.467Z msg=Internet connection WAN1 (Comcast Cable) on port 9 is down.
+```
+
+## 2026-08-29 — Internet and WAN / High Latency Detected
+
+```
+CEF:0|Ubiquiti|UniFi Network|10.6.101|112|High Latency Detected|4|UNIFIcategory=Internet and WAN UNIFIhost=UDM-Pro UNIFIdeviceMac=68:d7:9a:35:af:41 UNIFIdeviceName=UDM-Pro UNIFIdeviceModel=UDM-Pro UNIFIdeviceIp=192.168.1.1 UNIFIdeviceVersion=5.1.31 UNIFIwanName=Comcast UNIFIwanId=WAN1 UNIFIwanPort=9 UNIFIwanIsp=Comcast Cable UNIFIwanSubnet=71.235.83.203/21 UNIFIwanSla=Auto UNIFIwanLatency=62 UNIFIutcTime=2026-08-29T01:18:57.217Z msg=Internet connection WAN1 (Comcast Cable) on port 9 is experiencing high latency.
+```
+
+## 2026-08-29 — Software Updates / Network Updated
+
+```
+CEF:0|Ubiquiti|UniFi Network|10.6.101|578|Network Updated|4|UNIFIcategory=Software Updates UNIFIhost=UDM-Pro UNIFIapplication=UniFi Network UNIFIapplicationVersion=10.6.101 UNIFIapplicationPriorVersion=10.5.67 UNIFIutcTime=2026-08-28T02:28:59.064Z msg=UniFi Network has updated to 10.6.101
+```
+
+## 2026-08-29 — UniFi Devices / Device Offline
+
+```
+CEF:0|Ubiquiti|UniFi Network|10.5.67|512|Device Offline|8|UNIFIcategory=UniFi Devices UNIFIhost=UDM-Pro UNIFIdeviceMac=d0:21:f9:bc:15:fc UNIFIdeviceName=U6-Lite Liams Room UNIFIdeviceModel=U6-Lite UNIFIdeviceIp=192.168.1.66 UNIFIdeviceVersion=6.7.54 UNIFIconnectedToDeviceName=UDM-Pro UNIFIconnectedToDevicePort=1 UNIFIconnectedToDeviceIp=192.168.1.1 UNIFIconnectedToDeviceMac=68:d7:9a:35:af:41 UNIFIconnectedToDeviceModel=UDM-Pro UNIFIconnectedToDeviceVersion=5.1.26 UNIFIreference=https://help.ui.com/hc/en-us/articles/7258465146519 UNIFIutcTime=2026-08-23T20:28:58.384Z msg=U6-Lite Liams Room went offline.
+```
+
+## 2026-08-29 — UniFi Devices / AP Channel Change
+
+```
+CEF:0|Ubiquiti|UniFi Network|10.5.67|530|AP Channel Change|2|UNIFIcategory=UniFi Devices UNIFIhost=UDM-Pro UNIFIdeviceMac=24:5a:4c:58:91:f4 UNIFIdeviceName=UAP-IW Basement Theater UNIFIdeviceModel=UAP-IW-HD UNIFIdeviceIp=192.168.1.162 UNIFIdeviceVersion=6.7.54 UNIFIcurrentChannel=112 UNIFIpriorChannel=40 UNIFIutcTime=2026-08-20T06:01:15.074Z msg=UAP-IW Basement Theater moved to channel 112 from 40.
+```
+
+## 2026-08-29 — Internet and WAN / Packet Loss Detected
+
+```
+CEF:0|Ubiquiti|UniFi Network|10.5.67|113|Packet Loss Detected|4|UNIFIcategory=Internet and WAN UNIFIhost=UDM-Pro UNIFIdeviceMac=68:d7:9a:35:af:41 UNIFIdeviceName=UDM-Pro UNIFIdeviceModel=UDM-Pro UNIFIdeviceIp=192.168.1.1 UNIFIdeviceVersion=5.1.31 UNIFIwanName=Comcast UNIFIwanId=WAN1 UNIFIwanIsp=Comcast Cable UNIFIwanSubnet=71.235.83.203/21 UNIFIwanSla=Auto UNIFIutcTime=2026-08-25T07:20:58.294Z msg=Internet connection WAN1 (Comcast Cable) on port 9 is experiencing packet loss.
+```
+
+Status (all six above): used to add the UNIFIcategory-slug fallback —
+these all map to `internet_and_wan`, `software_updates`, or
+`unifi_devices` via that fallback rather than a hand-written entry in
+`CATEGORY_MAP`, since none of them are Security-category events and this
+project's hand-mapped short names are reserved for the security taxonomy
+(`ips_alert`, `firewall_block`, `honeypot`, `admin_action`).
