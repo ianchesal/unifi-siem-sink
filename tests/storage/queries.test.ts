@@ -1,5 +1,5 @@
 // tests/storage/queries.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -142,6 +142,49 @@ describe('listEvents', () => {
     expect(page.total).toBe(5);
     expect(page.events.length).toBe(2);
     expect(page.events.map((e) => e.raw)).toEqual(all.events.slice(1, 3).map((e) => e.raw));
+  });
+
+  it('pushes down a coarse SQL LIKE prefix filter for an octet-aligned /24 CIDR', () => {
+    const prepareSpy = vi.spyOn(db.conn, 'prepare');
+    const { events } = listEvents(db, { sourceIp: '10.0.30.0/24' });
+    expect(events.map((e) => e.raw)).toEqual(['ips-1']);
+
+    const sqlTexts = prepareSpy.mock.calls.map((call) => call[0] as string);
+    expect(sqlTexts.some((sql) => sql.includes('source_ip LIKE ?'))).toBe(true);
+    prepareSpy.mockRestore();
+  });
+
+  it('pushes down an exact-match SQL filter for a /32 CIDR', () => {
+    const prepareSpy = vi.spyOn(db.conn, 'prepare');
+    const { events } = listEvents(db, { sourceIp: '10.0.30.5/32' });
+    expect(events.map((e) => e.raw)).toEqual(['ips-1']);
+
+    const sqlTexts = prepareSpy.mock.calls.map((call) => call[0] as string);
+    expect(sqlTexts.some((sql) => sql.includes('source_ip = ?'))).toBe(true);
+    prepareSpy.mockRestore();
+  });
+
+  it('pushes down a coarse SQL LIKE prefix filter for an octet-aligned /8 CIDR', () => {
+    const { events } = listEvents(db, { sourceIp: '10.0.0.0/8' });
+    expect(events.map((e) => e.raw).sort()).toEqual(['fw-1', 'ips-1']);
+  });
+
+  it('pushes down a coarse SQL LIKE prefix filter for an octet-aligned /16 CIDR', () => {
+    const { events } = listEvents(db, { sourceIp: '10.0.0.0/16' });
+    expect(events.map((e) => e.raw).sort()).toEqual(['fw-1', 'ips-1']);
+  });
+
+  it('returns correct results for a non-octet-aligned CIDR (falls back to a bounded SQL limit)', () => {
+    // 10.0.30.5 and 10.0.31.9 are both within 10.0.16.0/20 (10.0.16.0 - 10.0.31.255).
+    const { events, total } = listEvents(db, { sourceIp: '10.0.16.0/20' });
+    expect(total).toBe(2);
+    expect(events.map((e) => e.raw).sort()).toEqual(['fw-1', 'ips-1']);
+  });
+
+  it('excludes rows outside a non-octet-aligned CIDR', () => {
+    const { events, total } = listEvents(db, { sourceIp: '10.0.32.0/20' });
+    expect(total).toBe(0);
+    expect(events).toEqual([]);
   });
 });
 
