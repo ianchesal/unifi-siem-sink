@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -73,5 +73,61 @@ describe('startSyslogListener', () => {
     });
     const row = db.conn.prepare('SELECT * FROM events').get() as { parsed: number };
     expect(row.parsed).toBe(0);
+  });
+
+  it('does not crash the process when insertEvent throws (e.g. a closed db)', async () => {
+    let caught: unknown = null;
+    const onUncaught = (err: unknown) => {
+      caught = err;
+    };
+    process.on('uncaughtException', onUncaught);
+    try {
+      // Close the db underlying this listener so insertEvent throws
+      // synchronously when the next message arrives.
+      db.close();
+      await sendUdp('CEF:0|Ubiquiti|UniFi Network|9.3.33|1|Test|1|msg=hello');
+      // Give the event loop a moment to deliver the datagram and run
+      // (and fail) the insert attempt.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } finally {
+      process.removeListener('uncaughtException', onUncaught);
+    }
+    expect(caught).toBeNull();
+  });
+
+  it('does not crash the process on a runtime socket error', async () => {
+    const createSocketSpy = vi.spyOn(dgram, 'createSocket');
+    const otherDb = await (async () => {
+      const otherDir = await mkdtemp(join(tmpdir(), 'unifi-siem-sink-test-'));
+      return { dir: otherDir, db: openDb(join(otherDir, 'events.db')) };
+    })();
+    const otherListener = await startSyslogListener(otherDb.db, {
+      port: PORT + 1,
+      bindAddress: '127.0.0.1',
+      maxMessageBytes: 100,
+    });
+    const socket = createSocketSpy.mock.results[createSocketSpy.mock.results.length - 1]
+      .value as dgram.Socket;
+    createSocketSpy.mockRestore();
+
+    let caught: unknown = null;
+    const onUncaught = (err: unknown) => {
+      caught = err;
+    };
+    process.on('uncaughtException', onUncaught);
+    try {
+      // Simulate a runtime socket error (e.g. ECONNRESET from an ICMP
+      // port-unreachable). With zero error listeners registered after
+      // bind, this would be an unhandled 'error' event and crash the
+      // process synchronously.
+      socket.emit('error', new Error('simulated runtime socket error'));
+    } finally {
+      process.removeListener('uncaughtException', onUncaught);
+    }
+    expect(caught).toBeNull();
+
+    await otherListener.close();
+    otherDb.db.close();
+    await rm(otherDb.dir, { recursive: true, force: true });
   });
 });

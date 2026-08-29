@@ -26,15 +26,30 @@ export function startSyslogListener(
         dropped += 1;
         return;
       }
-      const raw = msg.toString('utf8');
-      const event = parseMessage(raw);
-      insertEvent(db, event);
+      try {
+        const raw = msg.toString('utf8');
+        const event = parseMessage(raw);
+        insertEvent(db, event);
+      } catch {
+        // Never let a parse/insert failure (e.g. transient SQLite lock
+        // contention) escape the socket's 'message' handler and crash
+        // the process. This service must keep listening.
+      }
     });
 
     socket.once('error', reject);
 
     socket.bind(options.port, options.bindAddress, () => {
       socket.removeListener('error', reject);
+      // Register a permanent, non-throwing error handler so a runtime
+      // socket error (e.g. ECONNRESET from an ICMP port-unreachable)
+      // never becomes an unhandled EventEmitter error and crashes the
+      // process.
+      socket.on('error', () => {
+        // Swallow. The socket may still be usable; if it isn't, callers
+        // will notice no more events arrive. We deliberately don't
+        // rethrow here.
+      });
       resolve({
         droppedCount: () => dropped,
         close: () => new Promise<void>((res) => socket.close(() => res())),
