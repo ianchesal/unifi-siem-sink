@@ -120,8 +120,8 @@ docker compose up -d --build
 
 This builds the image (see `Dockerfile`) and starts the container, exposing:
 
-- `3000/tcp` for the MCP/HTTP server (health checks, MCP endpoint)
-- `514/udp` (mapped to the container's `10514/udp`) for incoming syslog/CEF traffic
+- `3001/tcp` (mapped to the container's `3000/tcp`) for the MCP/HTTP server (health checks, MCP endpoint)
+- `5514/udp` (mapped to the container's `10514/udp`) for incoming syslog/CEF traffic
 
 Event data persists in the `siem-data` named volume, backed by SQLite at
 `/data/events.db` inside the container.

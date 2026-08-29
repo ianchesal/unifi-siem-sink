@@ -4,8 +4,8 @@ services:
     image: unifi-siem-sink:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
-      - "514:10514/udp"
+      - "3001:3000"
+      - "5514:10514/udp"
     env_file:
       - .env
     volumes:
