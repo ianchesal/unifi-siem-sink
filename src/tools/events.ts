@@ -2,15 +2,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Db } from '../storage/db.js';
 import {
-  listEvents,
-  getEvent,
+  type EventStatsFilters,
   getCategories,
+  getEvent,
   getEventStats,
   type ListEventsFilters,
-  type EventStatsFilters,
+  listEvents,
   type StoredEvent,
 } from '../storage/queries.js';
-import { toolResult, toolError } from './util.js';
+import { toolError, toolResult } from './util.js';
 
 export async function listEventsTool(db: Db, params: ListEventsFilters) {
   return listEvents(db, params);

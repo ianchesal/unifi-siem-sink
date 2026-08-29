@@ -1,6 +1,6 @@
 import dgram from 'node:dgram';
 import { parseMessage } from '../parser/index.js';
-import { insertEvent, type Db } from '../storage/db.js';
+import { type Db, insertEvent } from '../storage/db.js';
 
 export interface SyslogListener {
   droppedCount(): number;

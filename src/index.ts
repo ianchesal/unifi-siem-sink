@@ -1,8 +1,8 @@
 import { loadConfig } from './config.js';
 import { createLogger } from './logger.js';
+import { createApp } from './server.js';
 import { openDb, purgeOldEvents } from './storage/db.js';
 import { startSyslogListener } from './syslog/listener.js';
-import { createApp } from './server.js';
 
 const config = loadConfig();
 const logger = createLogger(config.logLevel);

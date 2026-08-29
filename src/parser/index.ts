@@ -1,6 +1,6 @@
-import { stripEnvelope } from './envelope.js';
 import { parseCef } from './cef.js';
-import { normalize, unparsedEvent, type EventRow } from './normalize.js';
+import { stripEnvelope } from './envelope.js';
+import { type EventRow, normalize, unparsedEvent } from './normalize.js';
 
 export type { EventRow } from './normalize.js';
 

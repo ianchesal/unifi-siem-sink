@@ -38,8 +38,10 @@ function parseExtension(extensionRaw: string): Record<string, string> {
   const matches = [...extensionRaw.matchAll(keyPattern)];
   for (let m = 0; m < matches.length; m++) {
     const key = matches[m][1];
-    const valueStart = matches[m].index! + matches[m][0].length;
-    const valueEnd = m + 1 < matches.length ? matches[m + 1].index! : extensionRaw.length;
+    const idx = matches[m].index ?? 0;
+    const valueStart = idx + matches[m][0].length;
+    const nextIdx = matches[m + 1]?.index ?? extensionRaw.length;
+    const valueEnd = m + 1 < matches.length ? nextIdx : extensionRaw.length;
     const value = extensionRaw
       .slice(valueStart, valueEnd)
       .trim()
