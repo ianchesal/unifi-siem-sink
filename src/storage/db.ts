@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { EventRow } from '../parser/normalize.js';
 
@@ -39,9 +41,17 @@ const MIGRATIONS: { version: number; sql: string }[] = [
 ];
 
 export function openDb(path: string): Db {
+  if (path !== ':memory:') {
+    const dir = dirname(path);
+    if (dir && dir !== '.') mkdirSync(dir, { recursive: true });
+  }
+
   const conn = new DatabaseSync(path);
-  conn.exec('PRAGMA journal_mode = WAL;');
+  // auto_vacuum must be set before any other pragma/statement that touches the database
+  // header (e.g. journal_mode) writes it for the first time — after that, SQLite silently
+  // ignores changes to auto_vacuum. See Finding 1 of the 2026-08-28 final review.
   conn.exec('PRAGMA auto_vacuum = INCREMENTAL;');
+  conn.exec('PRAGMA journal_mode = WAL;');
   conn.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY);');
 
   const applied = new Set(

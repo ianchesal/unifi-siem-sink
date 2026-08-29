@@ -32,6 +32,24 @@ describe('openDb', () => {
     db.close();
     expect(() => openDb(dbPath)).not.toThrow();
   });
+
+  it('enables incremental auto_vacuum on a freshly-created database', () => {
+    const row = db.conn.prepare('PRAGMA auto_vacuum').get() as { auto_vacuum: number };
+    expect(row.auto_vacuum).toBe(2);
+  });
+
+  it('creates the parent directory of the db path if it does not exist', () => {
+    const nestedPath = join(dir, 'nested', 'sub', 'events.db');
+    const nestedDb = openDb(nestedPath);
+    try {
+      const row = nestedDb.conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='events'")
+        .get();
+      expect(row).toBeDefined();
+    } finally {
+      nestedDb.close();
+    }
+  });
 });
 
 describe('insertEvent', () => {
