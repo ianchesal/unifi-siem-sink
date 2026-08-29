@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node --env-file=.env dist/index.js",
     "dev": "NODE_OPTIONS=--experimental-sqlite node --watch --experimental-strip-types src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
