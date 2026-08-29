@@ -121,3 +121,45 @@ these all map to `internet_and_wan`, `software_updates`, or
 `CATEGORY_MAP`, since none of them are Security-category events and this
 project's hand-mapped short names are reserved for the security taxonomy
 (`ips_alert`, `firewall_block`, `honeypot`, `admin_action`).
+
+## 2026-08-29 — UniFi Protect / motion (detection)
+
+Trigger: a camera ("Front Door") recorded motion. Captured live over the
+syslog listener at 09:50 local time. First sample from a third distinct
+CEF-emitting product: `Ubiquiti|UniFi Protect|7.2.105`, alongside the
+previously-seen `Ubiquiti|UniFi OS|5.1.31` and
+`Ubiquiti|UniFi Network|10.x.x` sources. Envelope here is plain
+RFC3164-style (`Mon DD HH:MM:SS hostname CEF:...`), no secondary ISO8601
+timestamp like the UniFi OS/Network samples carry.
+
+Notable shape differences from the Network/OS samples above:
+- `UNIFIcategory=detection` is a category value we hadn't seen before —
+  falls through to the `detection` slug via the fallback added for the
+  Internet/WAN and UniFi Devices samples.
+- Carries lowercase duplicate extension keys (`category=detection`,
+  `severity=3`) that echo the CEF header `Severity` field and the
+  `UNIFIcategory` key — harmless, since the parser reads the CEF header
+  Severity and `UNIFIcategory` specifically, not these lowercase
+  duplicates, but worth knowing Protect echoes some fields redundantly.
+- `msg` value is `"Front Door has recorded motion."` — with literal
+  double-quote characters *inside* the value, since CEF doesn't
+  quote-wrap string values itself. The parser stores the quotes as part
+  of the string (correct — not something to strip).
+- No `eventId`, `eventType`, `timestamp` (epoch millis) equivalents exist
+  in the Network/OS samples above — this looks like Protect's own event
+  schema layered under CEF's Extension format rather than reusing the
+  `UNIFI*`-prefixed key convention Network/OS events use.
+
+Status: not yet used to change the parser — `category: 'detection'`,
+`event_time: null` (no `rt`/`UNIFIutcTime` key; `timestamp` is epoch
+millis under a plain, non-`UNIFI`-prefixed key our normalizer doesn't
+read yet), and `signature: null` (no `UNIFIipsSignature`/`UNIFIpolicyName`
+present) are all currently correct-but-incomplete for this event type.
+Revisit if UniFi Protect events turn out to matter for this project's
+scope (they're camera/detection data, not network security — may not be
+worth dedicated handling, similar to the UniFi OS admin-action sample
+above).
+
+```
+CEF:0|Ubiquiti|UniFi Protect|7.2.105|2159|motion|3|UNIFIcategory=detection eventId=4ebd78c0-8f52-4e1a-8b66-84a6f5d487a2 eventType=motion category=detection severity=3 timestamp=1788011392204 msg="Front Door has recorded motion."
+```
