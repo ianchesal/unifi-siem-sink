@@ -1,0 +1,21 @@
+services:
+  unifi-siem-sink:
+    build: .
+    image: unifi-siem-sink:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "514:10514/udp"
+    env_file:
+      - .env
+    volumes:
+      - siem-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  siem-data:
