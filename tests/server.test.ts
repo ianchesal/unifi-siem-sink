@@ -59,4 +59,42 @@ describe('POST /mcp', () => {
     const res = await request(app).post('/mcp').set('Authorization', 'Bearer wrong').send({});
     expect(res.status).toBe(401);
   });
+
+  it('accepts a correctly-authenticated initialize request and reaches the MCP transport', async () => {
+    const app = createApp(db, config, makeListener());
+    const res = await request(app)
+      .post('/mcp')
+      .set('Authorization', `Bearer ${config.mcpSecret}`)
+      .set('Accept', 'application/json, text/event-stream')
+      .set('Content-Type', 'application/json')
+      .send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'test-client', version: '1.0.0' },
+        },
+      });
+
+    // A correctly-authenticated request must get past authMiddleware (no 401) and be handled
+    // by the real MCP transport, which returns a JSON-RPC initialize result.
+    expect(res.status).not.toBe(401);
+    expect(res.status).toBeGreaterThanOrEqual(200);
+    expect(res.status).toBeLessThan(300);
+
+    // StreamableHTTPServerTransport responds over SSE (Content-Type: text/event-stream), so the
+    // JSON-RPC payload is the "data:" line of the event stream body, not a parsed JSON res.body.
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    const dataLine = res.text.split('\n').find((line) => line.startsWith('data: '));
+    expect(dataLine).toBeDefined();
+    const payload = JSON.parse((dataLine as string).slice('data: '.length));
+
+    expect(payload.jsonrpc).toBe('2.0');
+    expect(payload.id).toBe(1);
+    expect(payload.result).toBeDefined();
+    expect(payload.result.serverInfo).toMatchObject({ name: 'unifi-siem-sink' });
+    expect(payload.result.protocolVersion).toBeDefined();
+  });
 });
