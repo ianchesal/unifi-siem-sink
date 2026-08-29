@@ -5,6 +5,7 @@ dist/
 .mcp.json
 *.env
 coverage/
+data/
 docs/superpowers/
 spec-review.md
 /PROMPT.md
