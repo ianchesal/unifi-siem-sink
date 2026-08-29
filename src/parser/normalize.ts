@@ -20,8 +20,15 @@ export interface EventRow {
   parsed: 0 | 1;
 }
 
+// Keyed by `${UNIFIcategory}|${UNIFIsubCategory-or-UNIFIpolicyType}`. Real
+// Security-category events from a live UDM Pro carry no UNIFIsubCategory
+// key at all — the subtype signal is UNIFIpolicyType instead (see
+// tests/fixtures/real-cef-samples.md). The UNIFIsubCategory-keyed entries
+// come from Ubiquiti's published documentation examples and are kept for
+// event shapes that do carry that key.
 const CATEGORY_MAP: Record<string, string> = {
   'Security|Intrusion Prevention': 'ips_alert',
+  'Security|IDS/IPS': 'ips_alert',
   'Security|Firewall': 'firewall_block',
   'Security|Honeypot': 'honeypot',
   'System|Admin': 'admin_action',
@@ -49,21 +56,23 @@ function validPortOrNull(value: string | undefined): number | null {
   return Number.isInteger(port) && port >= 0 && port <= 65535 ? port : null;
 }
 
-function validEventTime(rt: string | undefined): string | null {
-  if (!rt) return null;
-  const asNumber = Number(rt);
-  const date = Number.isFinite(asNumber) && rt.trim() !== '' ? new Date(asNumber) : new Date(rt);
+function validEventTime(value: string | undefined): string | null {
+  if (!value) return null;
+  const asNumber = Number(value);
+  const date =
+    Number.isFinite(asNumber) && value.trim() !== '' ? new Date(asNumber) : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 export function normalize(cef: CefMessage, raw: string, receivedAt: string): EventRow {
   const ext = cef.extension;
-  const categoryKey = `${ext.UNIFIcategory ?? ''}|${ext.UNIFIsubCategory ?? ''}`;
+  const subtype = ext.UNIFIsubCategory ?? ext.UNIFIpolicyType ?? '';
+  const categoryKey = `${ext.UNIFIcategory ?? ''}|${subtype}`;
   const severityNum = Number(cef.severity);
 
   return {
     received_at: receivedAt,
-    event_time: validEventTime(ext.rt),
+    event_time: validEventTime(ext.rt ?? ext.UNIFIutcTime),
     category: CATEGORY_MAP[categoryKey] ?? 'unknown',
     subcategory: ext.UNIFIsubCategory ?? null,
     severity: Number.isFinite(severityNum) ? severityNum : null,
@@ -74,7 +83,7 @@ export function normalize(cef: CefMessage, raw: string, receivedAt: string): Eve
     dest_port: validPortOrNull(ext.dpt),
     protocol: ext.proto ?? null,
     action: ext.act ?? null,
-    signature: ext.cs1 ?? (cef.signatureId || null),
+    signature: ext.UNIFIipsSignature ?? ext.UNIFIpolicyName ?? ext.cs1 ?? (cef.signatureId || null),
     message: ext.msg ?? null,
     device_host: ext.UNIFIhost ?? null,
     raw,

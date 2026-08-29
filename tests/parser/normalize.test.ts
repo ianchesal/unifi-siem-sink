@@ -93,6 +93,56 @@ describe('normalize', () => {
     const cef = makeCef({ extension: { msg: 'hello world' } });
     expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').message).toBe('hello world');
   });
+
+  // Real sample captured from a live UDM Pro (Network app 10.6.101), see
+  // tests/fixtures/real-cef-samples.md. Security-category events from this
+  // device carry no UNIFIsubCategory key at all; the subtype signal is
+  // UNIFIpolicyType instead. The real signature name lives in
+  // UNIFIipsSignature (not the standard CEF cs1 key), and the real
+  // timestamp is UNIFIutcTime (not the standard CEF rt key).
+  it('maps a real IDS/IPS block event (no UNIFIsubCategory, uses UNIFIpolicyType)', () => {
+    const cef = makeCef({
+      product: 'UniFi Network',
+      deviceVersion: '10.6.101',
+      signatureId: '201',
+      name: 'Threat Detected and Blocked',
+      severity: '7',
+      extension: {
+        UNIFIcategory: 'Security',
+        UNIFIhost: 'UDM-Pro',
+        proto: 'TCP',
+        spt: '53250',
+        dpt: '32400',
+        act: 'blocked',
+        UNIFIpolicyName: 'DShield Block List',
+        UNIFIpolicyType: 'IDS/IPS',
+        src: '198.235.24.95',
+        dst: '192.168.1.26',
+        UNIFIipsSignature: 'ET DROP Dshield Block Listed Source group 1',
+        UNIFIipsSignatureId: '2402000',
+        UNIFIutcTime: '2026-08-29T01:29:30.869Z',
+        msg: 'A network intrusion attempt from 198.235.24.95 to 192.168.1.26 has been detected and blocked.',
+      },
+    });
+    const row = normalize(cef, 'raw-ips-block', '2026-08-29T09:29:00.000Z');
+    expect(row.category).toBe('ips_alert');
+    expect(row.signature).toBe('ET DROP Dshield Block Listed Source group 1');
+    expect(row.event_time).toBe('2026-08-29T01:29:30.869Z');
+    expect(row.source_ip).toBe('198.235.24.95');
+    expect(row.dest_ip).toBe('192.168.1.26');
+    expect(row.source_port).toBe(53250);
+    expect(row.dest_port).toBe(32400);
+    expect(row.protocol).toBe('TCP');
+    expect(row.action).toBe('blocked');
+    expect(row.severity).toBe(7);
+  });
+
+  it('falls back to UNIFIpolicyName for signature when UNIFIipsSignature is absent', () => {
+    const cef = makeCef({
+      extension: { UNIFIcategory: 'Security', UNIFIpolicyType: 'Firewall', UNIFIpolicyName: 'Block IoT VLAN' },
+    });
+    expect(normalize(cef, 'raw', '2026-08-28T22:00:00.000Z').signature).toBe('Block IoT VLAN');
+  });
 });
 
 describe('unparsedEvent', () => {
