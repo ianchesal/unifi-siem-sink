@@ -1,26 +1,81 @@
 # UniFi SIEM Sink
 
-A fake SIEM that you can ship your Unifi UDM logs to and then point AI to analyze the logs.
+MCP server that receives UniFi's CEF-over-syslog SIEM export, stores it in
+SQLite with a retention window, and exposes it to an LLM over Streamable
+HTTP — filling the one gap UniFi's own Network API leaves open: IPS/IDS
+threat events.
 
-Unifi does not expose the IDP logs and events via there API which means using
-AI to analyze events is hard. This sink service can be configured as a SIEM in
-the UDM control plane. It captures the incoming logs and events, storing them
-with a TTL. It provides an MCP interface to an AI that it can use to analyze
-these logs and events.
+## Why this exists
+
+The UniFi Network Local API does not expose IPS/IDS threat events. The
+`stat/ips/event` endpoint was removed in firmware 10.x with no documented
+replacement, and there's an [open, unresolved community feature
+request](https://community.ui.com/questions/Add-IPS-Threat-Management-Events-to-UniFi-Network-API/638a2897-7e66-449c-94f6-369be01ba2e9)
+asking Ubiquiti to bring it back. The only remaining path to that data is
+the UniFi Network app's own [SIEM/syslog
+export](https://help.ui.com/hc/en-us/articles/33349041044119-UniFi-System-Logs-SIEM-Integration)
+(Network > Integrations > System Logging), which does still carry
+Security-category events (Firewall, Honeypot, Intrusion Prevention) in
+Common Event Format (CEF). This service listens for that export, parses it
+defensively (raw message always preserved, even when a field can't be
+extracted), and stores it somewhere an LLM can actually query.
+
+### Works alongside `unifi-mcp-server`
+
+This project pairs with
+[`unifi-mcp-server`](https://github.com/ianchesal/unifi-mcp-server), which
+exposes the rest of the UniFi Network API (firewall rules, networks,
+clients, traffic rules, port forwarding, monitoring, and the classic
+`get_network_events` alarm feed) as MCP tools. Add both to your MCP client
+and an LLM gets the full picture: `unifi-mcp-server` for everything the API
+covers, `unifi-siem-sink` for the IPS/IDS and Security-category data the API
+doesn't.
 
 ## Quick Start (Official Docker Image)
 
-No published Docker image exists yet — no release has been cut for this
-project. Once a release process is in place (see the sibling
-`unifi-mcp-server` project for the pattern to follow — it has an established
-release/publish workflow this project can adopt), this section will point at
-a pre-built image on a registry. Until then, use
-[Run with Docker Compose](#run-with-docker-compose) below to build and run
-the image locally.
+No repo clone needed — pull the published image directly from the GitHub
+Container Registry.
+
+### 1. Create a `.env` file
+
+```bash
+MCP_SECRET=<choose-a-strong-secret>
+```
+
+### 2. Run the container
+
+```bash
+docker run -d \
+  --name unifi-siem-sink \
+  --env-file .env \
+  -p 3000:3000 \
+  -p 514:10514/udp \
+  -v unifi-siem-sink-data:/data \
+  ghcr.io/ianchesal/unifi-siem-sink:latest
+```
+
+### 3. Point the UDM Pro at it
+
+In the UniFi Network app, go to **Integrations > System Logging** (SIEM
+export), select **SIEM Server** as the destination, choose the log
+categories you want (Security, at minimum), and enter this host's IP and
+port `514`.
+
+### 4. Add to your MCP client
+
+```json
+{
+  "mcpServers": {
+    "unifi-siem": {
+      "type": "http",
+      "url": "http://<homelab-ip>:3000/mcp",
+      "headers": { "Authorization": "Bearer <your-MCP_SECRET>" }
+    }
+  }
+}
+```
 
 ## Tools
-
-MCP tools exposed by this server for an AI client to query stored events:
 
 | Tool | Description |
 |---|---|
@@ -29,6 +84,20 @@ MCP tools exposed by this server for an AI client to query stored events:
 | `get_categories` | List the distinct event categories currently present in the store (e.g. "ips_alert", "firewall_block", "honeypot", "admin_action", "unknown"). |
 | `get_event_stats` | Get aggregate event counts grouped by category, severity, or source_ip, optionally within a time range (since/until, ISO8601). |
 
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `MCP_SECRET` | yes | — | Bearer token for MCP endpoint auth |
+| `SYSLOG_UDP_PORT` | no | `10514` | In-container UDP listen port for incoming syslog/CEF traffic (the Docker image maps host `514/udp` to this) |
+| `SYSLOG_BIND_ADDRESS` | no | `0.0.0.0` | Interface the syslog listener binds to |
+| `MCP_PORT` | no | `3000` | Port the MCP/HTTP server listens on |
+| `MCP_HOST` | no | `0.0.0.0` | Interface the MCP/HTTP server binds to |
+| `DB_PATH` | no | `/data/events.db` (Docker) | SQLite database file path. Set by the Docker image for container deployments — only override for local (non-Docker) runs |
+| `RETENTION_DAYS` | no | `90` | Events older than this are purged on a rolling basis |
+| `MAX_MESSAGE_BYTES` | no | `16384` | Datagrams larger than this are dropped before parsing |
+| `LOG_LEVEL` | no | `info` | `error` \| `warn` \| `info` \| `debug` |
+
 ---
 
 ## Development (Running from a Repo Clone)
@@ -36,14 +105,12 @@ MCP tools exposed by this server for an AI client to query stored events:
 ### Setup
 
 ```bash
+git clone https://github.com/ianchesal/unifi-siem-sink
+cd unifi-siem-sink
 npm install
 cp .env.example .env
+# Edit .env and set MCP_SECRET to a strong, unique value
 ```
-
-Edit `.env` and set `MCP_SECRET` to a strong, unique value — this is the
-secret an MCP client must present to talk to this server. The other
-variables in `.env.example` (ports, DB path, retention, log level) have
-sensible defaults and can be left as-is for local development.
 
 ### Run with Docker Compose
 
@@ -56,11 +123,6 @@ This builds the image (see `Dockerfile`) and starts the container, exposing:
 - `3000/tcp` for the MCP/HTTP server (health checks, MCP endpoint)
 - `514/udp` (mapped to the container's `10514/udp`) for incoming syslog/CEF traffic
 
-Once it's running, configure the UDM Pro to ship its logs here: in the UniFi
-controller, go to **Network > Settings > System Logging** (or **Integrations
-> SIEM export**, depending on controller version) and point the remote
-syslog / SIEM destination at this host's IP address on port `514`.
-
 Event data persists in the `siem-data` named volume, backed by SQLite at
 `/data/events.db` inside the container.
 
@@ -71,7 +133,8 @@ npm run build && npm start
 ```
 
 This compiles TypeScript to `dist/` and runs the compiled server with
-`node dist/index.js` — the same path used in the Docker image.
+`node --env-file=.env dist/index.js` — the same path used in the Docker
+image.
 
 **Known issue — `npm run dev` is currently broken on Node 24.x and 25.x.**
 The `dev` script (`node --experimental-strip-types src/index.ts`, with
@@ -86,12 +149,45 @@ this codebase. Until that's resolved (e.g. by adopting a tool like `tsx`, or
 if the sibling project's convention changes), use `npm run build && npm
 start` for local runs, rebuilding after each change.
 
+### Tests
+
+```bash
+npm test          # run the full suite
+npm run test:watch
+npm run lint       # biome check
+```
+
 ### Integration tests (requires real UDM Pro)
 
-This test tier does not exist yet. No confirmed live traffic has been
-captured from a real UDM Pro against this parser (see the design doc's Open
-Questions) — the current test suite runs entirely against synthetic and
-recorded CEF fixtures. Real integration tests should be added once actual
-CEF samples are captured from a live UDM Pro, especially Security-category
-events (IPS/IDS alerts, honeypot hits), so that fixtures can be built from
-genuine device output rather than assumptions about its format.
+This test tier does not exist yet. The current test suite runs entirely
+against synthetic and recorded CEF fixtures — see
+`tests/fixtures/real-cef-samples.md` for real samples captured from a live
+UDM Pro (Network app 10.6.101), used to ground the parser in genuine device
+output. Real integration tests should be added once a broader, more
+representative sample set is available.
+
+---
+
+## Cutting a release
+
+Releases are tag-driven. Pushing a `v*` tag to GitHub triggers
+`.github/workflows/release.yml`, which:
+- Builds and pushes a Docker image to `ghcr.io/ianchesal/unifi-siem-sink`
+  (tagged `latest`, `{major}.{minor}`, and `{version}`)
+- Creates a GitHub Release with auto-generated notes
+
+**Steps to release:**
+
+1. Ensure all changes are merged to `main` and CI is green.
+2. Decide the new version (follows semver: `MAJOR.MINOR.PATCH`).
+3. Update `"version"` in `package.json` to the new version.
+4. Commit: `git commit -m "chore: release v{version}" package.json`
+5. Tag: `git tag v{version}`
+6. Push both: `git push origin main && git push origin v{version}`
+
+The release workflow fires automatically on the tag push. No manual Docker
+build or GitHub Release creation needed.
+
+## License
+
+[MIT](LICENSE)
