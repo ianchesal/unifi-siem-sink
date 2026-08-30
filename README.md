@@ -56,10 +56,19 @@ docker run -d \
 
 ### 3. Point the UDM Pro at it
 
-In the UniFi Network app, go to **Integrations > System Logging** (SIEM
-export), select **SIEM Server** as the destination, choose the log
-categories you want (Security, at minimum), and enter this host's IP and
-port `514`.
+In the UniFi Network app, go to **Settings > CyberSecure > Traffic
+Logging > Activity Logging (Syslog)**, select **SIEM Server**, and add
+`security_detections` to Contents (along with any other categories you
+want — `admin_activity`, `critical`, `device`, `triggers`, `updates`,
+`vpn` are also available). Enter this host's IP as **Server Address** and
+`514` as **Port**.
+
+![UDM Pro Activity Logging (Syslog) configuration screen, showing SIEM Server selected with Contents set to Admin Activity, Critical, Devices, Security Detections, Triggers, Updates, and VPN, Server Address 192.168.1.26, Port 5514](udm-pro-siem-setup.png)
+
+Older UniFi OS versions expose this same setting under **Integrations >
+System Logging** instead — if you don't see **CyberSecure** in the left
+nav, look there. See [Troubleshooting](#troubleshooting) below if events
+still aren't showing up after this.
 
 ### 4. Add to your MCP client
 
@@ -167,6 +176,73 @@ output. Real integration tests should be added once a broader, more
 representative sample set is available.
 
 ---
+
+## Troubleshooting
+
+### No events showing up at all
+
+Start with the sink itself, before suspecting the UDM:
+
+```bash
+curl http://<homelab-ip>:3000/health
+# {"status":"ok","droppedMessages":0}
+```
+
+`droppedMessages` only counts oversized datagrams (see `MAX_MESSAGE_BYTES`)
+— it won't be nonzero just because nothing has arrived. If the container's
+been running and `get_categories` / `list_events` show nothing but `Test
+Syslog` / `Admin Made Config Changes` entries from initial setup, the UDM
+likely isn't sending traffic to this host at all, which almost always means
+its SIEM destination config is wrong or stale.
+
+**UniFi's UI has more than one place this setting can live** (a
+UniFi‑OS‑level "System Log" panel and the Network app's own
+CyberSecure/Integrations panel, depending on firmware version), and it's
+easy to configure the wrong one, or one that's since been superseded, and
+not notice — the UI gives no indication that a previously‑set destination
+elsewhere is now dead weight. If re-checking the UI settings (see [Point
+the UDM Pro at it](#3-point-the-udm-pro-at-it) above) doesn't turn up the
+problem, confirm what the controller actually has configured by SSHing
+into the UDM and querying its config database directly:
+
+```bash
+ssh root@<udm-ip>
+mongo --port 27117 ace --eval 'db.setting.find({key: "rsyslogd"}).pretty()'
+```
+
+This returns the live `rsyslogd` settings document — `ip`, `port`,
+`enabled`, and `contents` (the selected log categories). Confirm `ip`/`port`
+match this host, `enabled` is `true`, and `contents` includes
+`security_detections`. This is read-only and safe; don't write to this
+database — make any corrections through the UI.
+
+### Container shows `unhealthy` but the service is fine
+
+If `docker compose ps` shows `(unhealthy)` while `curl .../health` from the
+host works fine, check whether the healthcheck itself is broken rather than
+the service — `wget http://localhost:3000/health` run *inside* the
+container can fail with `Connection refused` if `localhost` resolves to
+`::1` and the app isn't listening on the IPv6 loopback, even though
+`127.0.0.1` works. `docker-compose.yml`'s healthcheck uses `127.0.0.1`
+explicitly for this reason; if you've customized it, avoid `localhost`
+there.
+
+### Verifying end-to-end delivery
+
+UniFi's IDS/IPS engine (Suricata-based) has a well-known benign test
+signature you can trip safely from any LAN client, without needing to wait
+for a real intrusion attempt:
+
+```bash
+curl http://testmyids.com
+```
+
+This returns a canned `uid=0(root) gid=0(root) groups=0(root)` response
+that exists specifically to trigger the `GPL ATTACK_RESPONSE id check
+returned root` signature. A "Threat Detected and Blocked" event should show
+up in `list_events` (category `ips_alert`) within a few seconds if the
+pipeline — UDM export config, network path, and this sink — is wired up
+correctly end to end.
 
 ## Cutting a release
 
