@@ -11,7 +11,10 @@ expose IPS/IDS threat events (the `stat/ips/event` endpoint was removed in
 firmware 10.x) — the SIEM/syslog export is the only remaining path to that
 data. It pairs with the sibling project `unifi-mcp-server`, which covers
 everything else in the UniFi Network API; this project fills only the
-Security-category gap.
+Security-category gap. A third sibling, `unifi-siem-lens`, sits on top of
+this project's event store and runs scheduled, code-driven analysis
+heuristics against it — it's a consumer of this project's MCP tools, not a
+dependency of this codebase.
 
 ## Commands
 

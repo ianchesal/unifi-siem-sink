@@ -20,16 +20,29 @@ Common Event Format (CEF). This service listens for that export, parses it
 defensively (raw message always preserved, even when a field can't be
 extracted), and stores it somewhere an LLM can actually query.
 
-### Works alongside `unifi-mcp-server`
+### Part of a three-project set
 
-This project pairs with
-[`unifi-mcp-server`](https://github.com/ianchesal/unifi-mcp-server), which
-exposes the rest of the UniFi Network API (firewall rules, networks,
-clients, traffic rules, port forwarding, monitoring, and the classic
-`get_network_events` alarm feed) as MCP tools. Add both to your MCP client
-and an LLM gets the full picture: `unifi-mcp-server` for everything the API
-covers, `unifi-siem-sink` for the IPS/IDS and Security-category data the API
-doesn't.
+This is the second of three companion projects for running an LLM against a
+UDM Pro:
+
+- [`unifi-mcp-server`](https://github.com/ianchesal/unifi-mcp-server) —
+  exposes the UniFi Network API (firewall rules, networks, clients, traffic
+  rules, port forwarding, monitoring) as MCP tools.
+- **`unifi-siem-sink`** (this project) — listens for UniFi's SIEM/syslog
+  export and stores IPS/IDS and Security-category events (the one thing the
+  Network API doesn't expose) in SQLite, queryable over MCP.
+- [`unifi-siem-lens`](https://github.com/ianchesal/unifi-siem-lens) — sits
+  on top of this project's event store, running scheduled, code-driven
+  heuristics (new signature/source-IP detection, internal-source flagging,
+  repeat-offender tracking, statistical anomaly detection) against the
+  event history and rendering trends and findings on a dashboard, with a
+  one-click handoff to a Claude Code session for deeper analysis.
+
+Add `unifi-mcp-server` and `unifi-siem-sink` to your MCP client and an LLM
+gets the full picture: `unifi-mcp-server` for everything the API covers,
+`unifi-siem-sink` for the IPS/IDS and Security-category data the API
+doesn't. Run `unifi-siem-lens` alongside both for a standing analyst that's
+already triaged the noise before you ever open a chat.
 
 ## Quick Start (Official Docker Image)
 
