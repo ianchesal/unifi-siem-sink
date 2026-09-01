@@ -32,6 +32,28 @@ function parseHeader(body: string): { fields: string[]; extensionStart: number }
   return { fields, extensionStart: i };
 }
 
+function unescapeCefValue(value: string): string {
+  let result = '';
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === '\\' && i + 1 < value.length) {
+      const next = value[i + 1];
+      if (next === '\\') {
+        result += '\\';
+      } else if (next === '=') {
+        result += '=';
+      } else if (next === 'n') {
+        result += '\n';
+      } else {
+        result += next;
+      }
+      i += 1;
+      continue;
+    }
+    result += value[i];
+  }
+  return result;
+}
+
 function parseExtension(extensionRaw: string): Record<string, string> {
   const extension: Record<string, string> = {};
   const keyPattern = /([A-Za-z][A-Za-z0-9._]*)=/g;
@@ -42,13 +64,7 @@ function parseExtension(extensionRaw: string): Record<string, string> {
     const valueStart = idx + matches[m][0].length;
     const nextIdx = matches[m + 1]?.index ?? extensionRaw.length;
     const valueEnd = m + 1 < matches.length ? nextIdx : extensionRaw.length;
-    const value = extensionRaw
-      .slice(valueStart, valueEnd)
-      .trim()
-      .replace(/\\\\/g, '\\')
-      .replace(/\\=/g, '=')
-      .replace(/\\n/g, '\n');
-    extension[key] = value;
+    extension[key] = unescapeCefValue(extensionRaw.slice(valueStart, valueEnd).trim());
   }
   return extension;
 }
