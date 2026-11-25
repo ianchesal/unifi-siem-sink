@@ -66,6 +66,16 @@ const MIGRATIONS: Migration[] = [
       return `Migration 3: re-parsed client events: ${r.updated} rows updated, ${r.sourceIpChanged} source_ip corrected`;
     },
   },
+  {
+    // unifi-siem-lens looks events up by client MAC (it opens the DB read-only, so the
+    // index has to come from here). Partial: most rows have no client MAC, and every
+    // lens query shape implies source_client_mac IS NOT NULL.
+    version: 4,
+    sql: `
+      CREATE INDEX idx_events_source_client_mac ON events(source_client_mac)
+        WHERE source_client_mac IS NOT NULL;
+    `,
+  },
 ];
 
 export function openDb(path: string, log?: (message: string) => void): Db {
@@ -102,6 +112,13 @@ export function openDb(path: string, log?: (message: string) => void): Db {
       throw err;
     }
   }
+
+  // Query planner stats. Without sqlite_stat1, SQLite can't tell that an index is selective
+  // when another one competes (e.g. lens's distinct-MAC scan picks idx_events_source_ip and
+  // walks every non-Security row). 0x10002 is SQLite's recommended form at connection open:
+  // analyze every table that needs it, bounded by a temporary analysis_limit. Lens opens the
+  // file read-only, but its planner reads the stats written here. purgeOldEvents refreshes them.
+  conn.exec('PRAGMA optimize=0x10002;');
 
   return {
     conn,
@@ -150,5 +167,6 @@ export function purgeOldEvents(db: Db, retentionDays: number, now: Date = new Da
   const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
   const result = db.conn.prepare('DELETE FROM events WHERE received_at < ?').run(cutoff);
   db.conn.exec('PRAGMA incremental_vacuum(1000);');
+  db.conn.exec('PRAGMA optimize;');
   return Number(result.changes);
 }
