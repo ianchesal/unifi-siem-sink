@@ -97,7 +97,11 @@ the parser of that day, not of the day the migration was written. Migration 3
 or were stored on their own `UNIFIdeviceIp`.
 `auto_vacuum = INCREMENTAL` must be set before any other pragma/statement
 touches the database header (e.g. `journal_mode`); after that SQLite
-silently ignores changes to it. `src/storage/cidr.ts` implements CIDR
+silently ignores changes to it. `openDb` runs `PRAGMA optimize=0x10002` after
+migrations and `purgeOldEvents` runs `PRAGMA optimize` hourly: without
+`sqlite_stat1` the planner can pick the wrong index when several compete (lens
+reads these stats through its read-only connection too), so check new query
+shapes with `EXPLAIN QUERY PLAN` against a populated DB. `src/storage/cidr.ts` implements CIDR
 matching used by the `list_events` `source_ip`/`dest_ip` filters.
 
 ## Config
