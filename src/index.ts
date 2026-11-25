@@ -9,7 +9,7 @@ const logger = createLogger(config.logLevel);
 
 logger.info('Starting unifi-siem-sink');
 
-const db = openDb(config.dbPath);
+const db = openDb(config.dbPath, (message) => logger.info(message));
 
 const purgeIntervalMs = 60 * 60 * 1000;
 const purgeTimer = setInterval(() => {

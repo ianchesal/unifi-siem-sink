@@ -2,13 +2,23 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { EventRow } from '../parser/normalize.js';
+import { reparseClientEvents } from './reparseClientEvents.js';
 
 export interface Db {
   conn: DatabaseSync;
   close(): void;
 }
 
-const MIGRATIONS: { version: number; sql: string }[] = [
+// A migration runs its `sql` (if any), then its `run` code step (if any), in one transaction.
+// A string returned by `run` is logged. Code steps use the parser as of when they run, not as of
+// when they were written.
+interface Migration {
+  version: number;
+  sql?: string;
+  run?: (conn: DatabaseSync) => string | undefined;
+}
+
+const MIGRATIONS: Migration[] = [
   {
     version: 1,
     sql: `
@@ -38,9 +48,27 @@ const MIGRATIONS: { version: number; sql: string }[] = [
       CREATE INDEX idx_events_dest_ip ON events(dest_ip);
     `,
   },
+  {
+    // UniFi client identity for events that name a LAN client by alias/hostname/MAC.
+    version: 2,
+    sql: `
+      ALTER TABLE events ADD COLUMN source_client_name TEXT;
+      ALTER TABLE events ADD COLUMN source_client_mac TEXT;
+      ALTER TABLE events ADD COLUMN dest_client_name TEXT;
+      ALTER TABLE events ADD COLUMN dest_client_mac TEXT;
+    `,
+  },
+  {
+    // Re-parse rows stored before Security events stopped falling back to UNIFIdeviceIp.
+    version: 3,
+    run: (conn) => {
+      const r = reparseClientEvents(conn);
+      return `Migration 3: re-parsed client events: ${r.updated} rows updated, ${r.sourceIpChanged} source_ip corrected`;
+    },
+  },
 ];
 
-export function openDb(path: string): Db {
+export function openDb(path: string, log?: (message: string) => void): Db {
   if (path !== ':memory:') {
     const dir = dirname(path);
     if (dir && dir !== '.') mkdirSync(dir, { recursive: true });
@@ -64,9 +92,11 @@ export function openDb(path: string): Db {
     if (applied.has(migration.version)) continue;
     conn.exec('BEGIN');
     try {
-      conn.exec(migration.sql);
+      if (migration.sql) conn.exec(migration.sql);
+      const message = migration.run?.(conn);
       conn.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(migration.version);
       conn.exec('COMMIT');
+      if (message) log?.(message);
     } catch (err) {
       conn.exec('ROLLBACK');
       throw err;
@@ -86,8 +116,9 @@ export function insertEvent(db: Db, event: EventRow): number {
     INSERT INTO events (
       received_at, event_time, category, subcategory, severity, name,
       source_ip, dest_ip, source_port, dest_port, protocol, action,
-      signature, message, device_host, raw, parsed
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      signature, message, device_host, source_client_name, source_client_mac,
+      dest_client_name, dest_client_mac, raw, parsed
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     event.received_at,
@@ -105,6 +136,10 @@ export function insertEvent(db: Db, event: EventRow): number {
     event.signature,
     event.message,
     event.device_host,
+    event.source_client_name,
+    event.source_client_mac,
+    event.dest_client_name,
+    event.dest_client_mac,
     event.raw,
     event.parsed
   );

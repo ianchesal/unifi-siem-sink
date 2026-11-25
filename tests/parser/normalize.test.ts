@@ -182,3 +182,139 @@ describe('unparsedEvent', () => {
     expect(row.event_time).toBeNull();
   });
 });
+
+describe('normalize: source attribution and client identity', () => {
+  const T = '2026-11-25T15:16:13.735Z';
+  const securityExt = {
+    UNIFIcategory: 'Security',
+    UNIFIpolicyType: 'IDS/IPS',
+    UNIFIdeviceIp: '192.168.1.1',
+  };
+
+  it('does not fall back to UNIFIdeviceIp for Security events', () => {
+    const row = normalize(
+      makeCef({
+        extension: {
+          ...securityExt,
+          UNIFIsrcClientAlias: 'tranquility',
+          UNIFIsrcClientHostname: 'tranquility',
+          UNIFIsrcClientMac: '1c:1b:0d:18:07:53',
+        },
+      }),
+      'raw',
+      T
+    );
+    expect(row.source_ip).toBeNull();
+    expect(row.source_client_name).toBe('tranquility');
+    expect(row.source_client_mac).toBe('1c:1b:0d:18:07:53');
+  });
+
+  it('keeps UNIFIdeviceIp fallback for Internet and WAN events', () => {
+    const row = normalize(
+      makeCef({ extension: { UNIFIcategory: 'Internet and WAN', UNIFIdeviceIp: '192.168.1.1' } }),
+      'raw',
+      T
+    );
+    expect(row.category).toBe('internet_and_wan');
+    expect(row.source_ip).toBe('192.168.1.1');
+  });
+
+  it('uses src for Security events when present', () => {
+    const row = normalize(makeCef({ extension: { ...securityExt, src: '10.0.30.5' } }), 'raw', T);
+    expect(row.source_ip).toBe('10.0.30.5');
+  });
+
+  it('uses UNIFIclientIp for Security events without src', () => {
+    const row = normalize(
+      makeCef({ extension: { ...securityExt, UNIFIclientIp: '10.0.30.7' } }),
+      'raw',
+      T
+    );
+    expect(row.source_ip).toBe('10.0.30.7');
+  });
+
+  it('drops dst client fields when they repeat the src client (MAC compared case-insensitively)', () => {
+    const row = normalize(
+      makeCef({
+        extension: {
+          ...securityExt,
+          UNIFIsrcClientAlias: 'tranquility',
+          UNIFIsrcClientMac: '1C:1B:0D:18:07:53',
+          UNIFIdstClientAlias: 'tranquility',
+          UNIFIdstClientMac: '1c:1b:0d:18:07:53',
+        },
+      }),
+      'raw',
+      T
+    );
+    expect(row.source_client_mac).toBe('1c:1b:0d:18:07:53');
+    expect(row.dest_client_name).toBeNull();
+    expect(row.dest_client_mac).toBeNull();
+  });
+
+  it('drops dst client fields by name when both MACs are absent', () => {
+    const row = normalize(
+      makeCef({
+        extension: { ...securityExt, UNIFIsrcClientAlias: 'nas', UNIFIdstClientAlias: 'nas' },
+      }),
+      'raw',
+      T
+    );
+    expect(row.source_client_name).toBe('nas');
+    expect(row.dest_client_name).toBeNull();
+    expect(row.dest_client_mac).toBeNull();
+  });
+
+  it('keeps dst client fields for a different client', () => {
+    const row = normalize(
+      makeCef({
+        extension: {
+          ...securityExt,
+          UNIFIsrcClientAlias: 'laptop',
+          UNIFIsrcClientMac: 'aa:aa:aa:aa:aa:aa',
+          UNIFIdstClientAlias: 'nas',
+          UNIFIdstClientMac: 'bb:bb:bb:bb:bb:bb',
+        },
+      }),
+      'raw',
+      T
+    );
+    expect(row.dest_client_name).toBe('nas');
+    expect(row.dest_client_mac).toBe('bb:bb:bb:bb:bb:bb');
+  });
+
+  it('falls back to hostname when alias is missing', () => {
+    const row = normalize(
+      makeCef({ extension: { ...securityExt, UNIFIsrcClientHostname: 'tranquility' } }),
+      'raw',
+      T
+    );
+    expect(row.source_client_name).toBe('tranquility');
+  });
+
+  it('stores MAC with null name when only MAC is given', () => {
+    const row = normalize(
+      makeCef({ extension: { ...securityExt, UNIFIsrcClientMac: 'AA:BB:CC:DD:EE:FF' } }),
+      'raw',
+      T
+    );
+    expect(row.source_client_name).toBeNull();
+    expect(row.source_client_mac).toBe('aa:bb:cc:dd:ee:ff');
+  });
+
+  it('leaves client fields null when the event names no client', () => {
+    const row = normalize(makeCef({ extension: { ...securityExt, src: '10.0.30.5' } }), 'raw', T);
+    expect(row.source_client_name).toBeNull();
+    expect(row.source_client_mac).toBeNull();
+    expect(row.dest_client_name).toBeNull();
+    expect(row.dest_client_mac).toBeNull();
+  });
+
+  it('unparsedEvent sets client fields to null', () => {
+    const row = unparsedEvent('garbled', T);
+    expect(row.source_client_name).toBeNull();
+    expect(row.source_client_mac).toBeNull();
+    expect(row.dest_client_name).toBeNull();
+    expect(row.dest_client_mac).toBeNull();
+  });
+});

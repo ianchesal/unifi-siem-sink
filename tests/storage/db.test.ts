@@ -74,3 +74,57 @@ describe('purgeOldEvents', () => {
     expect(remaining.map((r) => r.raw)).toEqual(['new']);
   });
 });
+
+describe('client identity schema (migrations 2 and 3)', () => {
+  const ORIGINAL_COLUMNS = [
+    'id', 'received_at', 'event_time', 'category', 'subcategory', 'severity', 'name',
+    'source_ip', 'dest_ip', 'source_port', 'dest_port', 'protocol', 'action', 'signature',
+    'message', 'device_host', 'raw', 'parsed',
+  ];
+  const CLIENT_COLUMNS = ['source_client_name', 'source_client_mac', 'dest_client_name', 'dest_client_mac'];
+
+  it('adds the four client columns and keeps the original 18', () => {
+    const names = (db.conn.prepare('PRAGMA table_info(events)').all() as { name: string }[]).map(
+      (r) => r.name
+    );
+    for (const col of [...ORIGINAL_COLUMNS, ...CLIENT_COLUMNS]) expect(names).toContain(col);
+  });
+
+  it('records migrations 2 and 3', () => {
+    const versions = (
+      db.conn.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as {
+        version: number;
+      }[]
+    ).map((r) => r.version);
+    expect(versions).toEqual([1, 2, 3]);
+  });
+
+  it('insertEvent persists client columns', () => {
+    const id = insertEvent(db, {
+      ...unparsedEvent('raw', '2026-11-25T00:00:00.000Z'),
+      source_client_name: 'tranquility',
+      source_client_mac: '1c:1b:0d:18:07:53',
+      dest_client_name: 'nas',
+      dest_client_mac: 'bb:bb:bb:bb:bb:bb',
+    });
+    const row = db.conn
+      .prepare(`SELECT ${CLIENT_COLUMNS.join(', ')} FROM events WHERE id = ?`)
+      .get(id) as Record<string, string>;
+    expect(row).toEqual({
+      source_client_name: 'tranquility',
+      source_client_mac: '1c:1b:0d:18:07:53',
+      dest_client_name: 'nas',
+      dest_client_mac: 'bb:bb:bb:bb:bb:bb',
+    });
+  });
+
+  it('logs the migration 3 summary through the optional logger', () => {
+    db.close();
+    const fresh = join(dir, 'fresh.db');
+    const messages: string[] = [];
+    const db2 = openDb(fresh, (m) => messages.push(m));
+    db2.close();
+    expect(messages.some((m) => m.startsWith('Migration 3:'))).toBe(true);
+    db = openDb(dbPath);
+  });
+});

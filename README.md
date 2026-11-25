@@ -101,10 +101,36 @@ still aren't showing up after this.
 
 | Tool | Description |
 |---|---|
-| `list_events` | List stored UniFi SIEM events. Filters: since/until (ISO8601 timestamps, filtered on receipt time), category, severity_min, source_ip/dest_ip (exact match or CIDR, e.g. "10.0.30.0/24"), limit (default 100, max 500), offset. |
-| `get_event` | Get a single stored event by id, including its full raw syslog message. |
+| `list_events` | List stored UniFi SIEM events. Filters: since/until (ISO8601 timestamps, filtered on receipt time), category, severity_min, source_ip/dest_ip (exact match or CIDR, e.g. "10.0.30.0/24"), limit (default 100, max 500), offset. Events include source_client_name/mac and dest_client_name/mac when UniFi identifies a LAN client by name/MAC instead of IP (source_ip may then be null). |
+| `get_event` | Get a single stored event by id, including its full raw syslog message. Events include source_client_name/mac and dest_client_name/mac when UniFi identifies a LAN client by name/MAC instead of IP (source_ip may then be null). |
 | `get_categories` | List the distinct event categories currently present in the store (e.g. "ips_alert", "firewall_block", "honeypot", "admin_action", "unknown"). |
 | `get_event_stats` | Get aggregate event counts grouped by category, severity, or source_ip, optionally within a time range (since/until, ISO8601). |
+
+## Event fields
+
+Every stored event has these columns (returned by `list_events` and `get_event`):
+
+| Field | Meaning |
+|---|---|
+| `id` | Row id |
+| `received_at` | When the sink received the datagram (ISO8601); retention and `since`/`until` use this |
+| `event_time` | Event time reported by UniFi (`rt` / `UNIFIutcTime`), or null |
+| `category` | Normalized category, e.g. `ips_alert`, `firewall_block`, `internet_and_wan`; otherwise a slug of `UNIFIcategory`, or `unknown` |
+| `subcategory` | `UNIFIsubCategory`, if present |
+| `severity` | CEF severity (0–10) |
+| `name` | CEF event name |
+| `source_ip` | IP of the host that originated the event, or null when it isn't known. Security events never use the gateway's own `UNIFIdeviceIp` as a fallback; device-level events (WAN, devices, updates) do |
+| `dest_ip` | `dst`, if present |
+| `source_port` / `dest_port` | `spt` / `dpt` |
+| `protocol` | `proto` |
+| `action` | `act` (e.g. `blocked`) |
+| `signature` | IPS signature, policy name, or CEF signature id |
+| `message` | `msg` |
+| `device_host` | `UNIFIhost` (the reporting UniFi device) |
+| `source_client_name` / `source_client_mac` | The LAN client UniFi names as the source (`UNIFIsrcClientAlias`, else `…Hostname`; MAC lowercased). Some Security events identify the internal host only this way, with no IP |
+| `dest_client_name` / `dest_client_mac` | Same, for the destination. Left null when UniFi labels both ends as the same client; in that case the direction UniFi reports is unreliable, so treat the source client as "one end of the flow" |
+| `raw` | The full syslog message as received |
+| `parsed` | 1 if CEF fields were extracted, 0 if only `raw` was kept |
 
 ## Environment Variables
 

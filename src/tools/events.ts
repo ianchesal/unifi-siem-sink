@@ -35,7 +35,7 @@ export async function getEventStatsTool(db: Db, params: EventStatsFilters) {
 export function registerEventTools(server: McpServer, db: Db): void {
   server.tool(
     'list_events',
-    'List stored UniFi SIEM events. Filters: since/until (ISO8601 timestamps, filtered on receipt time), category, severity_min, source_ip/dest_ip (exact match or CIDR, e.g. "10.0.30.0/24"), limit (default 100, max 500), offset.',
+    'List stored UniFi SIEM events. Filters: since/until (ISO8601 timestamps, filtered on receipt time), category, severity_min, source_ip/dest_ip (exact match or CIDR, e.g. "10.0.30.0/24"), limit (default 100, max 500), offset. Events include source_client_name/mac and dest_client_name/mac when UniFi identifies a LAN client by name/MAC instead of IP (source_ip may then be null).',
     {
       since: z.string().optional(),
       until: z.string().optional(),
@@ -67,7 +67,7 @@ export function registerEventTools(server: McpServer, db: Db): void {
 
   server.tool(
     'get_event',
-    'Get a single stored event by id, including its full raw syslog message.',
+    'Get a single stored event by id, including its full raw syslog message. Events include source_client_name/mac and dest_client_name/mac when UniFi identifies a LAN client by name/MAC instead of IP (source_ip may then be null).',
     { id: z.number().int() },
     async (p) => {
       try {

@@ -71,13 +71,47 @@ CEF:0|Ubiquiti|UniFi Network|10.5.67|201|Threat Detected and Blocked|9|UNIFIcate
 Note: this event has `UNIFIcategory=Security` but no `UNIFIsubCategory` and no
 `UNIFIpolicyType` at all, unlike the DShield sample above — so it currently
 falls through to the generic `category: 'security'` fallback slug rather
-than `ips_alert`. It also has no `src`/`dst`/`UNIFIclientIp`/`UNIFIdeviceIp`
-keys — only MAC/hostname/alias pairs for both sides — so `source_ip`/
-`dest_ip` correctly come back `null` rather than guessing from a non-IP
-field.
+than `ips_alert`. It has no `src`/`dst`/`UNIFIclientIp` keys, only
+alias/hostname/MAC pairs for both sides. It *does* carry
+`UNIFIdeviceIp=192.168.1.1` (the gateway), and before the 2026-11-25 fix that
+was wrongly stored as `source_ip`. Security events no longer fall back to
+`UNIFIdeviceIp`, so `source_ip`/`dest_ip` are `null` and the client lands in
+`source_client_name`/`source_client_mac` (the identical dst client is dropped).
 
 Status: used to add the UNIFIcategory-slug fallback for unmapped category
-pairs (see `CATEGORY_MAP` fallback logic in `normalize.ts`).
+pairs (see `CATEGORY_MAP` fallback logic in `normalize.ts`), and as a test case
+for the gateway-misattribution fix (`tests/parser/index.test.ts`).
+
+## 2026-11-25 — Security / IDS/IPS, both ends labeled the same client (event 7557)
+
+Trigger: VenomRAT C2 keepalive blocked on UDM OS 6.0.17 / Network 11.0.104.
+No `src=`/`dst=`; UniFi labels both ends as tranquility even though
+`deviceOutboundInterface=Comcast` shows the flow left via the WAN. The remote
+peer's IP is not in the message. Related rows 7475 and 7556 have the same shape
+(7556's `spt=2271` is the NanoCore C2 port, so even the src label is likely
+backwards).
+
+Status: used for the gateway-misattribution fix: `source_ip`/`dest_ip` null,
+`source_client_name=tranquility`, dst client dropped
+(`tests/fixtures/realSamples.ts`, `tests/parser/index.test.ts`).
+
+```
+Nov 25 10:16:13 UDM-Pro CEF:0|Ubiquiti|UniFi Network|11.0.104|201|Threat Detected and Blocked|9|UNIFIcategory=Security UNIFIhost=UDM-Pro proto=TCP spt=50330 dpt=52128 act=blocked app=Other UNIFIrisk=high UNIFIpolicyName=Malware and Trojans UNIFIpolicyType=IDS/IPS UNIFIdirection=outgoing deviceInboundInterface=Default deviceOutboundInterface=Comcast UNIFIdeviceMac=68:d7:9a:35:af:41 UNIFIdeviceName=UDM-Pro UNIFIdeviceModel=UDM-Pro UNIFIdeviceIp=192.168.1.1 UNIFIdeviceVersion=6.0.17 UNIFIsrcClientAlias=tranquility UNIFIsrcClientHostname=tranquility UNIFIsrcClientMac=1c:1b:0d:18:07:53 UNIFIsrcClientModel=Dell T110 Server UNIFIsrcZone=Internal UNIFIsrcRegion=US UNIFIdstClientAlias=tranquility UNIFIdstClientHostname=tranquility UNIFIdstClientMac=1c:1b:0d:18:07:53 UNIFIdstClientModel=Dell T110 Server UNIFIdstZone=Internal UNIFItotalBytes=563812 UNIFItotalPackets=2059 UNIFIpacketsReceived=1031 UNIFIpacketsSent=1028 UNIFIbytesReceived=495910 UNIFIbytesSent=67902 UNIFIflowCount=1 UNIFIflowId=null UNIFIflowStartTime=Nov 25, 2026 at 10:14:30.088 AM UNIFIipsSessionId=1788266902205713 UNIFIipsSignature=ET MALWARE VenomRAT CnC Server Keepalive UNIFIipsSignatureId=2055754 UNIFIutcTime=2026-11-25T15:16:13.724Z msg=A network intrusion attempt from tranquility to tranquility has been detected and blocked.
+```
+
+## 2026-11-24 — Security / IDS/IPS, dst IP but no src (event 7521)
+
+Trigger: outbound SSH scan signature from a laptop to GitHub. Has `dst=` but
+no `src=`; the internal host is identified only by `UNIFIsrcClient*`. The very
+next alert (7522) for the same flow carried `src=192.168.1.191` and no client
+fields — UniFi sends one or the other, never both.
+
+Status: used for the gateway-misattribution fix: `source_ip` null,
+`dest_ip=140.82.112.3`, `source_client_mac=d0:c1:b5:24:8e:54`.
+
+```
+Nov 24 17:36:55 UDM-Pro CEF:0|Ubiquiti|UniFi Network|11.0.104|201|Threat Detected and Blocked|7|UNIFIcategory=Security UNIFIhost=UDM-Pro proto=TCP spt=49318 dpt=22 act=blocked app=SSH UNIFIrisk=medium UNIFIpolicyName=Scanning Activity UNIFIpolicyType=IDS/IPS UNIFIdirection=outgoing deviceInboundInterface=Default deviceOutboundInterface=Comcast UNIFIdeviceMac=68:d7:9a:35:af:41 UNIFIdeviceName=UDM-Pro UNIFIdeviceModel=UDM-Pro UNIFIdeviceIp=192.168.1.1 UNIFIdeviceVersion=6.0.17 dst=140.82.112.3 UNIFIsrcClientAlias=ian-chesal-ML-MHWDP7TWPR 8e:54 UNIFIsrcClientHostname=ian-chesal-ML-MHWDP7TWPR UNIFIsrcClientMac=d0:c1:b5:24:8e:54 UNIFIsrcClientModel=Apple Laptop UNIFIsrcZone=Internal UNIFIdstRegion=US UNIFIdstZone=External UNIFItotalBytes=78 UNIFItotalPackets=1 UNIFIpacketsReceived=0 UNIFIpacketsSent=1 UNIFIbytesReceived=0 UNIFIbytesSent=78 UNIFIflowCount=1 UNIFIflowId=null UNIFIflowStartTime=Nov 24, 2026 at 5:36:53.782 PM UNIFIipsSessionId=1670049679963791 UNIFIipsSignature=ET SCAN Potential SSH Scan OUTBOUND UNIFIipsSignatureId=2003068 UNIFIutcTime=2026-11-24T22:36:55.204Z msg=A network intrusion attempt from ian-chesal-ML-MHWDP7TWPR 8e:54 to 140.82.112.3 has been detected and blocked.
+```
 
 ## 2026-08-29 — Internet and WAN / Internet Down
 

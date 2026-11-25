@@ -79,12 +79,22 @@ message is always stored even when structure can't be extracted:
 2. `cef.ts` `parseCef` — parses Common Event Format fields.
 3. `normalize.ts` `normalize` — maps CEF fields onto the `EventRow` schema
    (falls back to a slugified `UNIFIcategory` for categories UniFi emits
-   that aren't in the known mapping).
+   that aren't in the known mapping). `source_ip` falls back to
+   `UNIFIdeviceIp` only for non-Security events: a Security event with no
+   `src=` gets `source_ip = null`, with the LAN client (if UniFi names one)
+   in `source_client_*`/`dest_client_*`. Lens's operational-noise triage
+   relies on device-level events keeping the gateway fallback.
 
 **Storage** (`src/storage/db.ts`): `node:sqlite`'s `DatabaseSync`, WAL mode,
 incremental auto_vacuum. A numbered `MIGRATIONS` array applied in order and
 tracked in a `schema_migrations` table — add new schema changes as a new
 entry with the next `version`, never edit an already-applied migration.
+An entry may carry `sql`, a `run(conn)` code step, or both (`sql` first, same
+transaction; a string returned by `run` is logged at startup). Code steps call
+current code such as `parseMessage`, so a database that applies one later gets
+the parser of that day, not of the day the migration was written. Migration 3
+(`src/storage/reparseClientEvents.ts`) re-parses rows that name a UniFi client
+or were stored on their own `UNIFIdeviceIp`.
 `auto_vacuum = INCREMENTAL` must be set before any other pragma/statement
 touches the database header (e.g. `journal_mode`); after that SQLite
 silently ignores changes to it. `src/storage/cidr.ts` implements CIDR
