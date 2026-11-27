@@ -1,5 +1,13 @@
 # UniFi SIEM Sink
 
+> [!IMPORTANT]
+> **This repository is archived.** As of v2.0.0, `unifi-siem-sink` is part of
+> **[unifi-power-tools](https://github.com/ianchesal/unifi-power-tools)**,
+> which merges `unifi-siem-sink`, `unifi-mcp-server` and `unifi-siem-lens`
+> into one service: one container, one `/mcp` endpoint, one dashboard.
+> This repo gets no further updates. To move an existing install over, follow
+> [Migrating from the three services](https://github.com/ianchesal/unifi-power-tools#migrating-from-the-three-services).
+
 MCP server that receives UniFi's CEF-over-syslog SIEM export, stores it in
 SQLite with a retention window, and exposes it to an LLM over Streamable
 HTTP — filling the one gap UniFi's own Network API leaves open: IPS/IDS
